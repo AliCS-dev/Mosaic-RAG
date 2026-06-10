@@ -27,31 +27,20 @@ jobs:
       - name: Wait for services
         run: sleep 10
 
+      - name: Test API Controller health endpoint
+        run: curl --fail http://localhost:8000/
+
       - name: Test Retriever health endpoint
         run: curl --fail http://localhost:8001/
 
       - name: Test Generator health endpoint
         run: curl --fail http://localhost:8002/
 
-      - name: Test Retriever endpoint
+      - name: Test full API pipeline
         run: |
-          curl --fail -X POST http://localhost:8001/retrieve \
+          curl --fail -X POST http://localhost:8000/ask \
             -H "Content-Type: application/json" \
             -d '{"query": "what does docker do in rag?", "top_k": 3}'
-
-      - name: Test Generator endpoint
-        run: |
-          curl --fail -X POST http://localhost:8002/generate \
-            -H "Content-Type: application/json" \
-            -d '{
-              "query": "what is mosaic rag?",
-              "retrieved_documents": [
-                {
-                  "text": "Mosaic-RAG is a modular RAG architecture based on separated services.",
-                  "score": 3
-                }
-              ]
-            }'
 
       - name: Stop services
         if: always()

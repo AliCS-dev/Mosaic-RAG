@@ -1,4 +1,13 @@
 services:
+  api:
+    build: ./api
+    container_name: mosaic_api
+    ports:
+      - "8000:8000"
+    depends_on:
+      - retriever
+      - generator
+
   retriever:
     build: ./retriever
     container_name: mosaic_retriever
