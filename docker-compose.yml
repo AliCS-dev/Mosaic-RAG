@@ -1,0 +1,14 @@
+services:
+  retriever:
+    build: ./retriever
+    container_name: mosaic_retriever
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./data:/data
+
+  generator:
+    build: ./generator
+    container_name: mosaic_generator
+    ports:
+      - "8002:8002"

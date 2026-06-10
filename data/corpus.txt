@@ -1,0 +1,7 @@
+FlashRAG is a research toolkit for retrieval-augmented generation experiments.
+Mosaic-RAG is a modular RAG architecture based on separated services.
+Docker allows each RAG component to run in an isolated container.
+A retriever finds relevant documents for a user query.
+A generator creates an answer using the retrieved context.
+A reranker improves retrieval quality by reordering candidate documents.
+A verifier checks whether the final answer is supported by the retrieved evidence.
