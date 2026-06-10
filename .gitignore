@@ -1,8 +1,41 @@
+# Python cache
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
 .env
+.env.*
 .venv/
 venv/
+env/
+
+# Logs
 *.log
+logs/
+
+# Test/type-check cache
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# OS files
 .DS_Store
+Thumbs.db
+
+# IDE files
 .vscode/
+.idea/
+
+# Docker/runtime
+*.pid
+
+# Large local artifacts
+models/
+indexes/
+*.faiss
+*.bin
+*.pt
+*.pth
+*.safetensors

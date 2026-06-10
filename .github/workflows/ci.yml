@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - "feature/**"
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  docker-compose-build:
+    name: Build and test Docker services
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker Compose services
+        run: docker compose build
+
+      - name: Start Docker Compose services
+        run: docker compose up -d
+
+      - name: Wait for services
+        run: sleep 10
+
+      - name: Test Retriever health endpoint
+        run: curl --fail http://localhost:8001/
+
+      - name: Test Generator health endpoint
+        run: curl --fail http://localhost:8002/
+
+      - name: Test Retriever endpoint
+        run: |
+          curl --fail -X POST http://localhost:8001/retrieve \
+            -H "Content-Type: application/json" \
+            -d '{"query": "what does docker do in rag?", "top_k": 3}'
+
+      - name: Test Generator endpoint
+        run: |
+          curl --fail -X POST http://localhost:8002/generate \
+            -H "Content-Type: application/json" \
+            -d '{
+              "query": "what is mosaic rag?",
+              "retrieved_documents": [
+                {
+                  "text": "Mosaic-RAG is a modular RAG architecture based on separated services.",
+                  "score": 3
+                }
+              ]
+            }'
+
+      - name: Stop services
+        if: always()
+        run: docker compose down
