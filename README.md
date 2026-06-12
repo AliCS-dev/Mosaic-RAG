@@ -1,6 +1,6 @@
 # Mosaic-RAG
 
-Mosaic-RAG is an experimental Docker-based modular RAG framework.
+Mosaic-RAG is an experimental  modular RAG framework.
 
 The current prototype separates the RAG pipeline into independent services:
 
