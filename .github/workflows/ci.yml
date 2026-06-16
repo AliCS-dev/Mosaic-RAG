@@ -38,9 +38,15 @@ jobs:
 
       - name: Test full API pipeline
         run: |
-          curl --fail -X POST http://localhost:8000/ask \
+          response=$(curl --fail -s -X POST http://localhost:8000/ask \
             -H "Content-Type: application/json" \
-            -d '{"query": "what does docker do in rag?", "top_k": 3}'
+            -d '{"query": "test query", "top_k": 3}')
+
+          echo "$response"
+
+          echo "$response" | grep "request_id"
+          echo "$response" | grep "retrieved_documents"
+          echo "$response" | grep "answer"
 
       - name: Stop services
         if: always()
