@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 import logging
+from typing import Optional
 
 logging.basicConfig(
     level=logging.INFO,
@@ -13,6 +14,7 @@ app = FastAPI(title="Mosaic-RAG Generator Service")
 
 
 class GenerateRequest(BaseModel):
+    request_id: Optional[str] = None
     query: str
     retrieved_documents: list[dict]
 
@@ -27,8 +29,10 @@ def health_check():
 
 @app.post("/generate")
 def generate(request: GenerateRequest):
-    logger.info(f"Received generation request for query: {request.query}")
-    logger.info(f"Received {len(request.retrieved_documents)} retrieved documents")
+    request_id = request.request_id or "no-request-id"
+
+    logger.info(f"[{request_id}] Received generation request for query: {request.query}")
+    logger.info(f"[{request_id}] Received {len(request.retrieved_documents)} retrieved documents")
 
     context = " ".join(
         [document["text"] for document in request.retrieved_documents]
@@ -39,9 +43,10 @@ def generate(request: GenerateRequest):
         f"Answer based on retrieved context: {context}"
     )
 
-    logger.info("Generated answer successfully")
+    logger.info(f"[{request_id}] Generated answer successfully")
 
     return {
+        "request_id": request_id,
         "query": request.query,
         "answer": answer,
         "used_documents": request.retrieved_documents

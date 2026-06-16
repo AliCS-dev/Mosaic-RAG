@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import requests
 import logging
+import uuid
 
 logging.basicConfig(
     level=logging.INFO,
@@ -31,15 +32,18 @@ def health_check():
 
 @app.post("/ask")
 def ask(request: AskRequest):
-    logger.info(f"Received query: {request.query}")
-    logger.info(f"Requested top_k: {request.top_k}")
+    request_id = str(uuid.uuid4())
+
+    logger.info(f"[{request_id}] Received query: {request.query}")
+    logger.info(f"[{request_id}] Requested top_k: {request.top_k}")
 
     try:
-        logger.info("Calling Retriever Service")
+        logger.info(f"[{request_id}] Calling Retriever Service")
 
         retrieval_response = requests.post(
             RETRIEVER_URL,
             json={
+                "request_id": request_id,
                 "query": request.query,
                 "top_k": request.top_k
             },
@@ -51,13 +55,13 @@ def ask(request: AskRequest):
 
         retrieved_documents = retrieved_data["retrieved_documents"]
 
-        logger.info(f"Retriever returned {len(retrieved_documents)} documents")
-
-        logger.info("Calling Generator Service")
+        logger.info(f"[{request_id}] Retriever returned {len(retrieved_documents)} documents")
+        logger.info(f"[{request_id}] Calling Generator Service")
 
         generation_response = requests.post(
             GENERATOR_URL,
             json={
+                "request_id": request_id,
                 "query": request.query,
                 "retrieved_documents": retrieved_documents
             },
@@ -67,16 +71,17 @@ def ask(request: AskRequest):
         generation_response.raise_for_status()
         generated_data = generation_response.json()
 
-        logger.info("Generator returned answer successfully")
+        logger.info(f"[{request_id}] Generator returned answer successfully")
 
         return {
+            "request_id": request_id,
             "query": request.query,
             "retrieved_documents": retrieved_documents,
             "answer": generated_data["answer"]
         }
 
     except requests.exceptions.RequestException as error:
-        logger.error(f"Service communication failed: {str(error)}")
+        logger.error(f"[{request_id}] Service communication failed: {str(error)}")
 
         raise HTTPException(
             status_code=502,

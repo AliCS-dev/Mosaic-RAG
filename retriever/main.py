@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 import logging
+from typing import Optional
 
 logging.basicConfig(
     level=logging.INFO,
@@ -13,6 +14,7 @@ app = FastAPI(title="Mosaic-RAG Retriever Service")
 
 
 class QueryRequest(BaseModel):
+    request_id: Optional[str] = None
     query: str
     top_k: int = 3
 
@@ -39,8 +41,10 @@ def health_check():
 
 @app.post("/retrieve")
 def retrieve(request: QueryRequest):
-    logger.info(f"Received retrieval request for query: {request.query}")
-    logger.info(f"Requested top_k: {request.top_k}")
+    request_id = request.request_id or "no-request-id"
+
+    logger.info(f"[{request_id}] Received retrieval request for query: {request.query}")
+    logger.info(f"[{request_id}] Requested top_k: {request.top_k}")
 
     results = []
 
@@ -55,9 +59,10 @@ def retrieve(request: QueryRequest):
     results = sorted(results, key=lambda item: item["score"], reverse=True)
     top_results = results[:request.top_k]
 
-    logger.info(f"Returning {len(top_results)} retrieved documents")
+    logger.info(f"[{request_id}] Returning {len(top_results)} retrieved documents")
 
     return {
+        "request_id": request_id,
         "query": request.query,
         "top_k": request.top_k,
         "retrieved_documents": top_results
