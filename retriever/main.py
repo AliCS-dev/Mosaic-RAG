@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 import logging
 from typing import Optional
+from interfaces import RetrieverResult
 
 logging.basicConfig(
     level=logging.INFO,
@@ -11,6 +12,8 @@ logging.basicConfig(
 logger = logging.getLogger("mosaic-rag-retriever")
 
 app = FastAPI(title="Mosaic-RAG Retriever Service")
+
+SOURCE_RETRIEVER = "dense"
 
 
 class QueryRequest(BaseModel):
@@ -46,18 +49,32 @@ def retrieve(request: QueryRequest):
     logger.info(f"[{request_id}] Received retrieval request for query: {request.query}")
     logger.info(f"[{request_id}] Requested top_k: {request.top_k}")
 
-    results = []
+    results: list[RetrieverResult] = []
 
-    for document in DOCUMENTS:
+    for index, document in enumerate(DOCUMENTS):
         score = score_document(request.query, document)
 
-        results.append({
-            "text": document,
-            "score": score
-        })
+        results.append(
+            RetrieverResult(
+                document_id=f"doc-{index}",
+                text=document,
+                score=float(score),
+                rank=0,
+                source_retriever=SOURCE_RETRIEVER
+            )
+        )
 
-    results = sorted(results, key=lambda item: item["score"], reverse=True)
-    top_results = results[:request.top_k]
+    results = sorted(results, key=lambda item: item.score, reverse=True)
+    top_results = [
+        RetrieverResult(
+            document_id=result.document_id,
+            text=result.text,
+            score=result.score,
+            rank=rank,
+            source_retriever=result.source_retriever
+        )
+        for rank, result in enumerate(results[:request.top_k], start=1)
+    ]
 
     logger.info(f"[{request_id}] Returning {len(top_results)} retrieved documents")
 
@@ -65,5 +82,5 @@ def retrieve(request: QueryRequest):
         "request_id": request_id,
         "query": request.query,
         "top_k": request.top_k,
-        "retrieved_documents": top_results
+        "retrieved_documents": [result.dict() for result in top_results]
     }
