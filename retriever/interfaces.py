@@ -7,3 +7,10 @@ class RetrieverResult(BaseModel):
     score: float
     rank: int
     source_retriever: str
+
+
+def serialize_retriever_results(results: list[RetrieverResult]) -> list[dict]:
+    return [
+        result.model_dump() if hasattr(result, "model_dump") else result.dict()
+        for result in results
+    ]
