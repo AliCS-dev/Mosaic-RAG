@@ -2,7 +2,8 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 import logging
 from typing import Optional
-from interfaces import RetrieverResult
+from bm25 import BM25Retriever
+from interfaces import RetrieverResult, serialize_retriever_results
 
 logging.basicConfig(
     level=logging.INFO,
@@ -24,6 +25,8 @@ class QueryRequest(BaseModel):
 
 with open("/data/corpus.txt", "r", encoding="utf-8") as file:
     DOCUMENTS = [line.strip() for line in file.readlines() if line.strip()]
+
+BM25 = BM25Retriever(DOCUMENTS)
 
 
 def score_document(query: str, document: str) -> int:
@@ -82,5 +85,24 @@ def retrieve(request: QueryRequest):
         "request_id": request_id,
         "query": request.query,
         "top_k": request.top_k,
-        "retrieved_documents": [result.dict() for result in top_results]
+        "retrieved_documents": serialize_retriever_results(top_results)
+    }
+
+
+@app.post("/retrieve/bm25")
+def retrieve_bm25(request: QueryRequest):
+    request_id = request.request_id or "no-request-id"
+
+    logger.info(f"[{request_id}] Received BM25 retrieval request for query: {request.query}")
+    logger.info(f"[{request_id}] Requested top_k: {request.top_k}")
+
+    top_results = BM25.retrieve(request.query, request.top_k)
+
+    logger.info(f"[{request_id}] Returning {len(top_results)} BM25 retrieved documents")
+
+    return {
+        "request_id": request_id,
+        "query": request.query,
+        "top_k": request.top_k,
+        "retrieved_documents": serialize_retriever_results(top_results)
     }
