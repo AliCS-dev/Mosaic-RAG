@@ -3,6 +3,7 @@ from pydantic import BaseModel
 import logging
 from typing import Optional
 from bm25 import BM25Retriever
+from fusion import reciprocal_rank_fusion
 from interfaces import RetrieverResult, serialize_retriever_results
 
 logging.basicConfig(
@@ -36,6 +37,43 @@ def score_document(query: str, document: str) -> int:
     return len(query_words.intersection(document_words))
 
 
+def retrieve_dense_results(query: str, top_k: int) -> list[RetrieverResult]:
+    results: list[RetrieverResult] = []
+
+    for index, document in enumerate(DOCUMENTS):
+        score = score_document(query, document)
+
+        results.append(
+            RetrieverResult(
+                document_id=f"doc-{index}",
+                text=document,
+                score=float(score),
+                rank=0,
+                source_retriever=SOURCE_RETRIEVER
+            )
+        )
+
+    results = sorted(results, key=lambda item: item.score, reverse=True)
+
+    return [
+        RetrieverResult(
+            document_id=result.document_id,
+            text=result.text,
+            score=result.score,
+            rank=rank,
+            source_retriever=result.source_retriever
+        )
+        for rank, result in enumerate(results[:top_k], start=1)
+    ]
+
+
+def retrieve_hybrid_results(query: str, top_k: int) -> list[RetrieverResult]:
+    dense_results = retrieve_dense_results(query, top_k)
+    bm25_results = BM25.retrieve(query, top_k)
+
+    return reciprocal_rank_fusion([dense_results, bm25_results], top_k)
+
+
 @app.get("/")
 def health_check():
     return {
@@ -52,32 +90,7 @@ def retrieve(request: QueryRequest):
     logger.info(f"[{request_id}] Received retrieval request for query: {request.query}")
     logger.info(f"[{request_id}] Requested top_k: {request.top_k}")
 
-    results: list[RetrieverResult] = []
-
-    for index, document in enumerate(DOCUMENTS):
-        score = score_document(request.query, document)
-
-        results.append(
-            RetrieverResult(
-                document_id=f"doc-{index}",
-                text=document,
-                score=float(score),
-                rank=0,
-                source_retriever=SOURCE_RETRIEVER
-            )
-        )
-
-    results = sorted(results, key=lambda item: item.score, reverse=True)
-    top_results = [
-        RetrieverResult(
-            document_id=result.document_id,
-            text=result.text,
-            score=result.score,
-            rank=rank,
-            source_retriever=result.source_retriever
-        )
-        for rank, result in enumerate(results[:request.top_k], start=1)
-    ]
+    top_results = retrieve_dense_results(request.query, request.top_k)
 
     logger.info(f"[{request_id}] Returning {len(top_results)} retrieved documents")
 
