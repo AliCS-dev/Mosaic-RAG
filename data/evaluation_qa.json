@@ -1,0 +1,30 @@
+[
+  {
+    "question": "What is FlashRAG used for?",
+    "relevant_document_ids": ["doc-0"]
+  },
+  {
+    "question": "What is Mosaic-RAG architecture based on?",
+    "relevant_document_ids": ["doc-1"]
+  },
+  {
+    "question": "What lets each RAG component run in an isolated container?",
+    "relevant_document_ids": ["doc-2"]
+  },
+  {
+    "question": "What does a retriever do?",
+    "relevant_document_ids": ["doc-3"]
+  },
+  {
+    "question": "What does a generator create?",
+    "relevant_document_ids": ["doc-4"]
+  },
+  {
+    "question": "What improves retrieval quality by reordering documents?",
+    "relevant_document_ids": ["doc-5"]
+  },
+  {
+    "question": "What checks whether the final answer is supported by evidence?",
+    "relevant_document_ids": ["doc-6"]
+  }
+]
