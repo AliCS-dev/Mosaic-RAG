@@ -20,6 +20,17 @@ GENERATOR_URL = "http://generator:8002/generate"
 class AskRequest(BaseModel):
     query: str
     top_k: int = 3
+    retrieval_mode: str = "dense"
+
+
+def validate_retrieval_mode(retrieval_mode: str) -> None:
+    normalized_mode = retrieval_mode.lower().strip()
+
+    if normalized_mode not in {"dense", "bm25", "hybrid", "mosaic"}:
+        raise HTTPException(
+            status_code=400,
+            detail="retrieval_mode must be one of: dense, bm25, hybrid, mosaic"
+        )
 
 
 @app.get("/")
@@ -33,9 +44,11 @@ def health_check():
 @app.post("/ask")
 def ask(request: AskRequest):
     request_id = str(uuid.uuid4())
+    validate_retrieval_mode(request.retrieval_mode)
 
     logger.info(f"[{request_id}] Received query: {request.query}")
     logger.info(f"[{request_id}] Requested top_k: {request.top_k}")
+    logger.info(f"[{request_id}] Requested retrieval_mode: {request.retrieval_mode}")
 
     try:
         logger.info(f"[{request_id}] Calling Retriever Service")
@@ -45,7 +58,8 @@ def ask(request: AskRequest):
             json={
                 "request_id": request_id,
                 "query": request.query,
-                "top_k": request.top_k
+                "top_k": request.top_k,
+                "retrieval_mode": request.retrieval_mode
             },
             timeout=10
         )
@@ -76,6 +90,7 @@ def ask(request: AskRequest):
         return {
             "request_id": request_id,
             "query": request.query,
+            "retrieval_mode": retrieved_data["retrieval_mode"],
             "retrieved_documents": retrieved_documents,
             "answer": generated_data["answer"]
         }
