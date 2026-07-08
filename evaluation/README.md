@@ -4,7 +4,7 @@ This folder contains a small retrieval evaluation for Mosaic-RAG.
 
 The script compares three retrieval modes:
 
-- `dense`: the current dense-style keyword overlap retriever
+- `dense`: embedding-based dense retrieval with FAISS
 - `bm25`: the BM25 retriever
 - `hybrid`: Reciprocal Rank Fusion over dense and BM25 results
 
@@ -23,6 +23,8 @@ Higher is better.
 `Recall@5` is stricter than `Recall@10` because the relevant document must appear closer to the top of the result list. `Recall@10` is more forgiving and measures whether the system found the relevant document somewhere in a wider set of candidates.
 
 With the current tiny corpus, `Recall@10` is not very informative because there are fewer than 10 documents. It is included now so the same script can be reused when the corpus grows.
+
+The dense retriever uses `sentence-transformers` and `faiss-cpu` when those packages are installed. If they are not available in the local Python environment, the evaluation script falls back to the old keyword placeholder and prints a warning. The retriever Docker image installs the FAISS dependencies from `retriever/requirements.txt`.
 
 ## Run
 
