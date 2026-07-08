@@ -1,6 +1,7 @@
 import argparse
 import json
 import math
+import os
 import re
 from collections import Counter
 from pathlib import Path
@@ -9,6 +10,7 @@ from pathlib import Path
 MODES = ("dense", "bm25", "hybrid")
 DEFAULT_K_VALUES = (5, 10)
 DEFAULT_RRF_K = 60
+DEFAULT_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 
 
 def tokenize(text: str) -> list[str]:
@@ -37,28 +39,105 @@ def build_result(document_id: str, text: str, score: float, rank: int, source: s
     }
 
 
-def dense_retrieve(query: str, documents: list[str], top_k: int) -> list[dict]:
-    query_words = set(query.lower().replace("?", "").split())
-    results = []
+class DenseRetriever:
+    def __init__(self, documents: list[str], model_name: str | None = None):
+        self.documents = documents
+        self.model_name = model_name or os.getenv("DENSE_MODEL_NAME", DEFAULT_MODEL_NAME)
+        self.backend = "keyword"
+        self.model = None
+        self.index = None
 
-    for index, document in enumerate(documents):
+        self._initialize_faiss_backend()
+
+    def _initialize_faiss_backend(self) -> None:
+        try:
+            import faiss
+            from sentence_transformers import SentenceTransformer
+
+            self.model = SentenceTransformer(self.model_name)
+            document_embeddings = self.model.encode(
+                self.documents,
+                convert_to_numpy=True,
+                normalize_embeddings=True
+            ).astype("float32")
+
+            self.index = faiss.IndexFlatIP(document_embeddings.shape[1])
+            self.index.add(document_embeddings)
+            self.backend = "faiss"
+
+        except Exception as error:
+            print(
+                "Dense FAISS evaluation unavailable; using keyword fallback. "
+                f"Reason: {error}"
+            )
+
+    def _keyword_score(self, query: str, document: str) -> float:
+        query_words = set(query.lower().replace("?", "").split())
         document_words = set(document.lower().replace(".", "").split())
-        score = float(len(query_words.intersection(document_words)))
 
-        results.append(build_result(f"doc-{index}", document, score, 0, "dense"))
+        return float(len(query_words.intersection(document_words)))
 
-    ranked_results = sorted(results, key=lambda item: item["score"], reverse=True)
+    def _retrieve_with_keyword_fallback(self, query: str, top_k: int) -> list[dict]:
+        results = []
 
-    return [
-        build_result(
-            result["document_id"],
-            result["text"],
-            result["score"],
-            rank,
-            result["source_retriever"]
-        )
-        for rank, result in enumerate(ranked_results[:top_k], start=1)
-    ]
+        for index, document in enumerate(self.documents):
+            results.append(
+                build_result(
+                    f"doc-{index}",
+                    document,
+                    self._keyword_score(query, document),
+                    0,
+                    "dense"
+                )
+            )
+
+        ranked_results = sorted(results, key=lambda item: item["score"], reverse=True)
+
+        return self._rerank_results(ranked_results[:top_k])
+
+    def _retrieve_with_faiss(self, query: str, top_k: int) -> list[dict]:
+        query_embedding = self.model.encode(
+            [query],
+            convert_to_numpy=True,
+            normalize_embeddings=True
+        ).astype("float32")
+
+        scores, indices = self.index.search(query_embedding, min(top_k, len(self.documents)))
+        results = []
+
+        for score, index in zip(scores[0], indices[0]):
+            if index < 0:
+                continue
+
+            results.append(
+                build_result(
+                    f"doc-{index}",
+                    self.documents[index],
+                    float(score),
+                    0,
+                    "dense"
+                )
+            )
+
+        return self._rerank_results(results)
+
+    def _rerank_results(self, results: list[dict]) -> list[dict]:
+        return [
+            build_result(
+                result["document_id"],
+                result["text"],
+                result["score"],
+                rank,
+                result["source_retriever"]
+            )
+            for rank, result in enumerate(results, start=1)
+        ]
+
+    def retrieve(self, query: str, top_k: int) -> list[dict]:
+        if self.backend == "faiss":
+            return self._retrieve_with_faiss(query, top_k)
+
+        return self._retrieve_with_keyword_fallback(query, top_k)
 
 
 class BM25Retriever:
@@ -180,17 +259,24 @@ def reciprocal_rank_fusion(
 def retrieve_for_mode(
     query: str,
     documents: list[str],
+    dense: DenseRetriever | None,
     bm25: BM25Retriever,
     mode: str,
     top_k: int
 ) -> list[dict]:
     if mode == "dense":
-        return dense_retrieve(query, documents, top_k)
+        if dense is None:
+            raise ValueError("Dense retriever is required for dense mode.")
+
+        return dense.retrieve(query, top_k)
 
     if mode == "bm25":
         return bm25.retrieve(query, top_k)
 
-    dense_results = dense_retrieve(query, documents, top_k)
+    if dense is None:
+        raise ValueError("Dense retriever is required for hybrid mode.")
+
+    dense_results = dense.retrieve(query, top_k)
     bm25_results = bm25.retrieve(query, top_k)
 
     return reciprocal_rank_fusion([dense_results, bm25_results], top_k)
@@ -212,6 +298,7 @@ def evaluate_mode(
     mode: str,
     k_values: tuple[int, ...]
 ) -> dict[int, float]:
+    dense = DenseRetriever(documents) if mode in {"dense", "hybrid"} else None
     bm25 = BM25Retriever(documents)
     max_k = max(k_values)
     recalls = {k: [] for k in k_values}
@@ -220,6 +307,7 @@ def evaluate_mode(
         results = retrieve_for_mode(
             example["question"],
             documents,
+            dense,
             bm25,
             mode,
             max_k

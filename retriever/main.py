@@ -3,6 +3,7 @@ from pydantic import BaseModel
 import logging
 from typing import Optional
 from bm25 import BM25Retriever
+from dense import DenseRetriever
 from fusion import reciprocal_rank_fusion
 from interfaces import RetrieverResult, serialize_retriever_results
 
@@ -15,9 +16,6 @@ logger = logging.getLogger("mosaic-rag-retriever")
 
 app = FastAPI(title="Mosaic-RAG Retriever Service")
 
-SOURCE_RETRIEVER = "dense"
-
-
 class QueryRequest(BaseModel):
     request_id: Optional[str] = None
     query: str
@@ -29,47 +27,11 @@ with open("/data/corpus.txt", "r", encoding="utf-8") as file:
     DOCUMENTS = [line.strip() for line in file.readlines() if line.strip()]
 
 BM25 = BM25Retriever(DOCUMENTS)
-
-
-def score_document(query: str, document: str) -> int:
-    query_words = set(query.lower().replace("?", "").split())
-    document_words = set(document.lower().replace(".", "").split())
-
-    return len(query_words.intersection(document_words))
-
-
-def retrieve_dense_results(query: str, top_k: int) -> list[RetrieverResult]:
-    results: list[RetrieverResult] = []
-
-    for index, document in enumerate(DOCUMENTS):
-        score = score_document(query, document)
-
-        results.append(
-            RetrieverResult(
-                document_id=f"doc-{index}",
-                text=document,
-                score=float(score),
-                rank=0,
-                source_retriever=SOURCE_RETRIEVER
-            )
-        )
-
-    results = sorted(results, key=lambda item: item.score, reverse=True)
-
-    return [
-        RetrieverResult(
-            document_id=result.document_id,
-            text=result.text,
-            score=result.score,
-            rank=rank,
-            source_retriever=result.source_retriever
-        )
-        for rank, result in enumerate(results[:top_k], start=1)
-    ]
+DENSE = DenseRetriever(DOCUMENTS)
 
 
 def retrieve_hybrid_results(query: str, top_k: int) -> list[RetrieverResult]:
-    dense_results = retrieve_dense_results(query, top_k)
+    dense_results = DENSE.retrieve(query, top_k)
     bm25_results = BM25.retrieve(query, top_k)
 
     return reciprocal_rank_fusion([dense_results, bm25_results], top_k)
@@ -94,7 +56,7 @@ def retrieve_results(query: str, top_k: int, retrieval_mode: str) -> list[Retrie
     normalized_mode = normalize_retrieval_mode(retrieval_mode)
 
     if normalized_mode == "dense":
-        return retrieve_dense_results(query, top_k)
+        return DENSE.retrieve(query, top_k)
 
     if normalized_mode == "bm25":
         return BM25.retrieve(query, top_k)
@@ -107,7 +69,8 @@ def health_check():
     return {
         "service": "Mosaic-RAG Retriever",
         "status": "running",
-        "documents_loaded": len(DOCUMENTS)
+        "documents_loaded": len(DOCUMENTS),
+        "dense_backend": DENSE.backend
     }
 
 
