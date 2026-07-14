@@ -1,30 +1,102 @@
 [
   {
-    "question": "What is FlashRAG used for?",
+    "question": "What toolkit supports experiments with retrieval-augmented generation?",
     "relevant_document_ids": ["doc-0"]
   },
   {
-    "question": "What is Mosaic-RAG architecture based on?",
+    "question": "How is Mosaic-RAG organized?",
     "relevant_document_ids": ["doc-1"]
   },
   {
-    "question": "What lets each RAG component run in an isolated container?",
+    "question": "What lets the RAG components operate in separate containers?",
     "relevant_document_ids": ["doc-2"]
   },
   {
-    "question": "What does a retriever do?",
+    "question": "Which part of the pipeline searches for useful passages?",
     "relevant_document_ids": ["doc-3"]
   },
   {
-    "question": "What does a generator create?",
+    "question": "Which component writes a response from the supplied context?",
     "relevant_document_ids": ["doc-4"]
   },
   {
-    "question": "What improves retrieval quality by reordering documents?",
-    "relevant_document_ids": ["doc-5"]
+    "question": "What component checks that an answer is backed by evidence?",
+    "relevant_document_ids": ["doc-6"]
   },
   {
-    "question": "What checks whether the final answer is supported by evidence?",
-    "relevant_document_ids": ["doc-6"]
+    "question": "What are text embeddings?",
+    "relevant_document_ids": ["doc-7"]
+  },
+  {
+    "question": "Which library performs fast similarity search across dense vectors?",
+    "relevant_document_ids": ["doc-9"]
+  },
+  {
+    "question": "Which ranking method uses term frequency and inverse document frequency?",
+    "relevant_document_ids": ["doc-10"]
+  },
+  {
+    "question": "How can ranked results from different retrievers be combined without comparing their raw scores?",
+    "relevant_document_ids": ["doc-11"]
+  },
+  {
+    "question": "Why are long source files split into smaller passages before indexing?",
+    "relevant_document_ids": ["doc-12"]
+  },
+  {
+    "question": "How can search be limited to documents from a certain author or date?",
+    "relevant_document_ids": ["doc-13"]
+  },
+  {
+    "question": "Which metric tells us what fraction of the relevant documents were retrieved?",
+    "relevant_document_ids": ["doc-15"]
+  },
+  {
+    "question": "What do we call an answer claim that has no support in the evidence?",
+    "relevant_document_ids": ["doc-17"]
+  },
+  {
+    "question": "How can related vocabulary be added to a search request to find more matches?",
+    "relevant_document_ids": ["doc-19"]
+  },
+  {
+    "question": "Which reranking model reads the query and passage together?",
+    "relevant_document_ids": ["doc-20"]
+  },
+  {
+    "question": "How can repeated searches be answered faster and more cheaply?",
+    "relevant_document_ids": ["doc-23"]
+  },
+  {
+    "question": "What determines the maximum amount of evidence a language model can read in one request?",
+    "relevant_document_ids": ["doc-27"]
+  },
+  {
+    "question": "Which retrieval approach depends on exact words shared by the query and passage?",
+    "relevant_document_ids": ["doc-28"]
+  },
+  {
+    "question": "Which retrieval approach can find conceptually similar passages even when the wording differs?",
+    "relevant_document_ids": ["doc-29"]
+  },
+  {
+    "question": "How do logs from several services get connected to one user operation?",
+    "relevant_document_ids": ["doc-38"]
+  },
+  {
+    "question": "How can configuration values change between deployments without editing the code?",
+    "relevant_document_ids": ["doc-39"]
+  },
+  {
+    "question": "What helps users verify where the claims in an answer came from?",
+    "relevant_document_ids": ["doc-18", "doc-41"]
+  },
+  {
+    "question": "Which approach combines keyword matching and meaning-based vector search?",
+    "relevant_document_ids": ["doc-46"]
+  },
+  {
+    "question": "Which metric gives more credit when the first correct result appears earlier?",
+    "relevant_document_ids": ["doc-47"]
   }
 ]

@@ -5,3 +5,44 @@ A retriever finds relevant documents for a user query.
 A generator creates an answer using the retrieved context.
 A reranker improves retrieval quality by reordering candidate documents.
 A verifier checks whether the final answer is supported by the retrieved evidence.
+Text embeddings represent passages as numerical vectors that capture semantic meaning.
+A vector database stores embeddings and supports nearest-neighbor similarity search.
+FAISS is a library for efficient similarity search over dense vectors.
+BM25 is a sparse ranking algorithm based on term frequency and inverse document frequency.
+Reciprocal Rank Fusion combines ranked lists by adding a score based on each document's rank.
+Chunking divides long source material into smaller passages before indexing.
+Metadata filters can restrict retrieval by fields such as date, author, language, or document type.
+The top-k setting controls how many retrieval results are returned to the next pipeline stage.
+Recall at k measures the fraction of known relevant documents found in the first k results.
+Precision at k measures how many of the first k retrieved documents are relevant.
+A hallucination is generated information that is unsupported or contradicted by the available evidence.
+Grounding connects an answer to retrieved evidence so its claims can be checked.
+Query expansion adds related terms or alternative wording to improve retrieval coverage.
+A cross-encoder reranker jointly reads a query and candidate passage to estimate relevance.
+An API gateway provides a single entry point and routes requests to backend services.
+Observability uses logs, metrics, and traces to show how requests move through the system.
+Caching repeated query results can reduce retrieval latency and computational cost.
+Batching processes several embedding requests together to improve hardware utilization.
+Model quantization reduces numerical precision to lower memory use and speed up inference.
+A prompt template gives the generator consistent instructions and places retrieved context into the request.
+The context window limits how much prompt text and retrieved evidence a language model can read at once.
+Sparse retrieval relies on lexical overlap between query terms and document terms.
+Dense retrieval compares semantic vector representations and can match passages with different wording.
+Indexing prepares documents and their representations so they can be searched efficiently.
+Text preprocessing can normalize case, punctuation, and tokens before sparse indexing.
+Document deduplication prevents repeated source passages from occupying multiple result positions.
+Reranking can improve relevance but adds latency because more candidates must be scored.
+An evaluation dataset contains test questions and labels identifying the documents considered relevant.
+Docker Compose defines and starts multiple connected containers from one configuration file.
+FastAPI is a Python framework used to build typed HTTP APIs.
+A health endpoint reports whether a service is running and ready to receive requests.
+Request identifiers connect log entries belonging to the same operation across multiple services.
+Environment variables configure deployment-specific values without hard-coding them in source files.
+Generation temperature controls output randomness; lower values usually make responses more deterministic.
+Citations let users trace generated claims back to the source passages used as evidence.
+Access control determines which users or services are allowed to read protected documents.
+Backups make it possible to restore an index after data loss or corruption.
+Versioning the corpus and evaluation labels makes retrieval experiments reproducible.
+Rate limiting protects an API by restricting how many requests a client can send in a period.
+Hybrid retrieval combines lexical matching with semantic vector search.
+Mean reciprocal rank rewards systems that place the first relevant result near the top of the ranking.
