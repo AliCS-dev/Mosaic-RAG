@@ -1,20 +1,19 @@
 import argparse
 import json
-import math
 import os
-import re
-from collections import Counter
+import sys
 from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 
 MODES = ("dense", "bm25", "hybrid")
 DEFAULT_K_VALUES = (5, 10)
-DEFAULT_RRF_K = 60
-DEFAULT_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+DEFAULT_RETRIEVER_URL = "http://localhost:8001"
 
 
-def tokenize(text: str) -> list[str]:
-    return re.findall(r"\w+", text.lower())
+class EvaluationError(Exception):
+    pass
 
 
 def load_corpus(path: Path) -> list[str]:
@@ -29,263 +28,114 @@ def load_qa_dataset(path: Path) -> list[dict]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def build_result(document_id: str, text: str, score: float, rank: int, source: str) -> dict:
-    return {
-        "document_id": document_id,
-        "text": text,
-        "score": score,
-        "rank": rank,
-        "source_retriever": source
-    }
-
-
-class DenseRetriever:
-    def __init__(self, documents: list[str], model_name: str | None = None):
-        self.documents = documents
-        self.model_name = model_name or os.getenv("DENSE_MODEL_NAME", DEFAULT_MODEL_NAME)
-        self.backend = "keyword"
-        self.model = None
-        self.index = None
-
-        self._initialize_faiss_backend()
-
-    def _initialize_faiss_backend(self) -> None:
-        try:
-            import faiss
-            from sentence_transformers import SentenceTransformer
-
-            self.model = SentenceTransformer(self.model_name)
-            document_embeddings = self.model.encode(
-                self.documents,
-                convert_to_numpy=True,
-                normalize_embeddings=True
-            ).astype("float32")
-
-            self.index = faiss.IndexFlatIP(document_embeddings.shape[1])
-            self.index.add(document_embeddings)
-            self.backend = "faiss"
-
-        except Exception as error:
-            print(
-                "Dense FAISS evaluation unavailable; using keyword fallback. "
-                f"Reason: {error}"
-            )
-
-    def _keyword_score(self, query: str, document: str) -> float:
-        query_words = set(query.lower().replace("?", "").split())
-        document_words = set(document.lower().replace(".", "").split())
-
-        return float(len(query_words.intersection(document_words)))
-
-    def _retrieve_with_keyword_fallback(self, query: str, top_k: int) -> list[dict]:
-        results = []
-
-        for index, document in enumerate(self.documents):
-            results.append(
-                build_result(
-                    f"doc-{index}",
-                    document,
-                    self._keyword_score(query, document),
-                    0,
-                    "dense"
-                )
-            )
-
-        ranked_results = sorted(results, key=lambda item: item["score"], reverse=True)
-
-        return self._rerank_results(ranked_results[:top_k])
-
-    def _retrieve_with_faiss(self, query: str, top_k: int) -> list[dict]:
-        query_embedding = self.model.encode(
-            [query],
-            convert_to_numpy=True,
-            normalize_embeddings=True
-        ).astype("float32")
-
-        scores, indices = self.index.search(query_embedding, min(top_k, len(self.documents)))
-        results = []
-
-        for score, index in zip(scores[0], indices[0]):
-            if index < 0:
-                continue
-
-            results.append(
-                build_result(
-                    f"doc-{index}",
-                    self.documents[index],
-                    float(score),
-                    0,
-                    "dense"
-                )
-            )
-
-        return self._rerank_results(results)
-
-    def _rerank_results(self, results: list[dict]) -> list[dict]:
-        return [
-            build_result(
-                result["document_id"],
-                result["text"],
-                result["score"],
-                rank,
-                result["source_retriever"]
-            )
-            for rank, result in enumerate(results, start=1)
-        ]
-
-    def retrieve(self, query: str, top_k: int) -> list[dict]:
-        if self.backend == "faiss":
-            return self._retrieve_with_faiss(query, top_k)
-
-        return self._retrieve_with_keyword_fallback(query, top_k)
-
-
-class BM25Retriever:
-    def __init__(self, documents: list[str], k1: float = 1.5, b: float = 0.75):
-        self.documents = documents
-        self.k1 = k1
-        self.b = b
-        self.tokenized_documents = [tokenize(document) for document in documents]
-        self.document_lengths = [len(tokens) for tokens in self.tokenized_documents]
-        self.average_document_length = (
-            sum(self.document_lengths) / len(self.document_lengths)
-            if self.document_lengths
-            else 0.0
-        )
-        self.document_frequencies = self._build_document_frequencies()
-
-    def _build_document_frequencies(self) -> dict[str, int]:
-        document_frequencies = {}
-
-        for tokens in self.tokenized_documents:
-            for token in set(tokens):
-                document_frequencies[token] = document_frequencies.get(token, 0) + 1
-
-        return document_frequencies
-
-    def _idf(self, token: str) -> float:
-        document_frequency = self.document_frequencies.get(token, 0)
-        document_count = len(self.documents)
-
-        return math.log(
-            1 + (document_count - document_frequency + 0.5) / (document_frequency + 0.5)
-        )
-
-    def _score_document(self, query_tokens: list[str], document_index: int) -> float:
-        document_tokens = self.tokenized_documents[document_index]
-        document_length = self.document_lengths[document_index]
-
-        if not document_tokens or self.average_document_length == 0:
-            return 0.0
-
-        term_frequencies = Counter(document_tokens)
-        score = 0.0
-
-        for token in query_tokens:
-            term_frequency = term_frequencies.get(token, 0)
-
-            if term_frequency == 0:
-                continue
-
-            denominator = term_frequency + self.k1 * (
-                1 - self.b + self.b * document_length / self.average_document_length
-            )
-            score += self._idf(token) * (term_frequency * (self.k1 + 1)) / denominator
-
-        return score
-
-    def retrieve(self, query: str, top_k: int) -> list[dict]:
-        query_tokens = tokenize(query)
-        results = []
-
-        for index, document in enumerate(self.documents):
-            results.append(
-                build_result(
-                    f"doc-{index}",
-                    document,
-                    self._score_document(query_tokens, index),
-                    0,
-                    "bm25"
-                )
-            )
-
-        ranked_results = sorted(results, key=lambda item: item["score"], reverse=True)
-
-        return [
-            build_result(
-                result["document_id"],
-                result["text"],
-                result["score"],
-                rank,
-                result["source_retriever"]
-            )
-            for rank, result in enumerate(ranked_results[:top_k], start=1)
-        ]
-
-
-def reciprocal_rank_fusion(
-    result_sets: list[list[dict]],
-    top_k: int,
-    rrf_k: int = DEFAULT_RRF_K
-) -> list[dict]:
-    scores = {}
-    documents_by_id = {}
-
-    for results in result_sets:
-        for position, result in enumerate(results, start=1):
-            rank = result["rank"] if result["rank"] > 0 else position
-            document_id = result["document_id"]
-
-            scores[document_id] = scores.get(document_id, 0.0) + 1 / (rrf_k + rank)
-            documents_by_id.setdefault(document_id, result)
-
-    ranked_document_ids = sorted(
-        scores,
-        key=lambda document_id: (-scores[document_id], document_id)
+def request_json(
+    url: str,
+    timeout: float,
+    payload: dict | None = None
+) -> dict:
+    data = json.dumps(payload).encode("utf-8") if payload is not None else None
+    request = Request(
+        url,
+        data=data,
+        headers={"Content-Type": "application/json"} if data else {},
+        method="POST" if data else "GET"
     )
 
-    return [
-        build_result(
-            document_id,
-            documents_by_id[document_id]["text"],
-            scores[document_id],
-            rank,
-            "rrf"
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except HTTPError as error:
+        response_body = error.read().decode("utf-8", errors="replace")
+        raise EvaluationError(
+            f"Retriever returned HTTP {error.code} for {url}: {response_body}"
+        ) from error
+    except URLError as error:
+        raise EvaluationError(
+            f"Could not connect to the retriever at {url}: {error.reason}"
+        ) from error
+    except (json.JSONDecodeError, TimeoutError) as error:
+        raise EvaluationError(f"Invalid response from {url}: {error}") from error
+
+
+class RetrieverClient:
+    def __init__(self, base_url: str, timeout: float):
+        self.base_url = base_url.rstrip("/")
+        self.timeout = timeout
+
+    def health(self) -> dict:
+        return request_json(f"{self.base_url}/", self.timeout)
+
+    def retrieve(self, query: str, mode: str, top_k: int, request_id: str) -> list[dict]:
+        response = request_json(
+            f"{self.base_url}/retrieve",
+            self.timeout,
+            {
+                "request_id": request_id,
+                "query": query,
+                "top_k": top_k,
+                "retrieval_mode": mode
+            }
         )
-        for rank, document_id in enumerate(ranked_document_ids[:top_k], start=1)
-    ]
+        results = response.get("retrieved_documents")
+
+        if not isinstance(results, list):
+            raise EvaluationError(
+                "Retriever response is missing the retrieved_documents list."
+            )
+
+        return results
 
 
-def retrieve_for_mode(
-    query: str,
-    documents: list[str],
-    dense: DenseRetriever | None,
-    bm25: BM25Retriever,
-    mode: str,
-    top_k: int
-) -> list[dict]:
-    if mode == "dense":
-        if dense is None:
-            raise ValueError("Dense retriever is required for dense mode.")
+def validate_dataset(documents: list[str], qa_dataset: list[dict]) -> None:
+    if not documents:
+        raise EvaluationError("The corpus is empty.")
 
-        return dense.retrieve(query, top_k)
+    if not qa_dataset:
+        raise EvaluationError("The QA dataset is empty.")
 
-    if mode == "bm25":
-        return bm25.retrieve(query, top_k)
+    document_ids = {f"doc-{index}" for index in range(len(documents))}
 
-    if dense is None:
-        raise ValueError("Dense retriever is required for hybrid mode.")
+    for index, example in enumerate(qa_dataset, start=1):
+        question = example.get("question")
+        relevant_ids = example.get("relevant_document_ids")
 
-    dense_results = dense.retrieve(query, top_k)
-    bm25_results = bm25.retrieve(query, top_k)
+        if not isinstance(question, str) or not question.strip():
+            raise EvaluationError(f"Question {index} has no valid question text.")
 
-    return reciprocal_rank_fusion([dense_results, bm25_results], top_k)
+        if not isinstance(relevant_ids, list) or not relevant_ids:
+            raise EvaluationError(f"Question {index} has no relevant document IDs.")
+
+        unknown_ids = set(relevant_ids) - document_ids
+        if unknown_ids:
+            raise EvaluationError(
+                f"Question {index} references unknown documents: "
+                f"{', '.join(sorted(unknown_ids))}"
+            )
+
+
+def validate_service(health: dict, expected_document_count: int) -> None:
+    if health.get("status") != "running":
+        raise EvaluationError("Retriever health check did not report a running service.")
+
+    backend = health.get("dense_backend")
+    if backend != "faiss":
+        raise EvaluationError(
+            f"Dense backend is {backend!r}, not 'faiss'. "
+            "Evaluation stopped to avoid reporting placeholder results."
+        )
+
+    loaded_count = health.get("documents_loaded")
+    if loaded_count != expected_document_count:
+        raise EvaluationError(
+            f"Retriever loaded {loaded_count} documents, but the evaluation corpus has "
+            f"{expected_document_count}. Restart the retriever with the current corpus."
+        )
 
 
 def recall_at_k(results: list[dict], relevant_document_ids: list[str], k: int) -> float:
     relevant_ids = set(relevant_document_ids)
     retrieved_ids = {
-        result["document_id"]
+        result.get("document_id")
         for result in results[:k]
     }
 
@@ -294,23 +144,21 @@ def recall_at_k(results: list[dict], relevant_document_ids: list[str], k: int) -
 
 def evaluate_mode(
     qa_dataset: list[dict],
-    documents: list[str],
+    client: RetrieverClient,
     mode: str,
     k_values: tuple[int, ...]
-) -> dict[int, float]:
-    dense = DenseRetriever(documents) if mode in {"dense", "hybrid"} else None
-    bm25 = BM25Retriever(documents)
+) -> tuple[dict[int, float], list[dict]]:
     max_k = max(k_values)
+    strict_k = min(k_values)
     recalls = {k: [] for k in k_values}
+    misses = []
 
-    for example in qa_dataset:
-        results = retrieve_for_mode(
+    for index, example in enumerate(qa_dataset, start=1):
+        results = client.retrieve(
             example["question"],
-            documents,
-            dense,
-            bm25,
             mode,
-            max_k
+            max_k,
+            f"evaluation-{mode}-{index}"
         )
 
         for k in k_values:
@@ -318,19 +166,39 @@ def evaluate_mode(
                 recall_at_k(results, example["relevant_document_ids"], k)
             )
 
-    return {
+        result_ranks = {
+            result.get("document_id"): position
+            for position, result in enumerate(results, start=1)
+        }
+        missing_ids = [
+            document_id
+            for document_id in example["relevant_document_ids"]
+            if result_ranks.get(document_id, max_k + 1) > strict_k
+        ]
+
+        if missing_ids:
+            misses.append(
+                {
+                    "question": example["question"],
+                    "missing_ids": missing_ids,
+                    "result_ranks": result_ranks,
+                    "max_k": max_k
+                }
+            )
+
+    metrics = {
         k: sum(values) / len(values)
         for k, values in recalls.items()
     }
+    return metrics, misses
 
 
 def print_results(metrics_by_mode: dict[str, dict[int, float]], k_values: tuple[int, ...]) -> None:
     headers = ["mode", *[f"recall@{k}" for k in k_values]]
-    rows = []
-
-    for mode, metrics in metrics_by_mode.items():
-        rows.append([mode, *[f"{metrics[k]:.2f}" for k in k_values]])
-
+    rows = [
+        [mode, *[f"{metrics[k]:.2f}" for k in k_values]]
+        for mode, metrics in metrics_by_mode.items()
+    ]
     widths = [
         max(len(str(row[index])) for row in [headers, *rows])
         for index in range(len(headers))
@@ -343,21 +211,52 @@ def print_results(metrics_by_mode: dict[str, dict[int, float]], k_values: tuple[
         print("  ".join(value.ljust(widths[index]) for index, value in enumerate(row)))
 
 
+def print_misses(misses_by_mode: dict[str, list[dict]], strict_k: int) -> None:
+    print(f"\nMisses at Recall@{strict_k}:")
+
+    for mode, misses in misses_by_mode.items():
+        print(f"\n{mode}:")
+        if not misses:
+            print("  none")
+            continue
+
+        for miss in misses:
+            statuses = []
+            for document_id in miss["missing_ids"]:
+                rank = miss["result_ranks"].get(document_id)
+                status = f"rank {rank}" if rank else f"not in top {miss['max_k']}"
+                statuses.append(f"{document_id}: {status}")
+
+            print(f"  - {miss['question']}")
+            print(f"    {', '.join(statuses)}")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Evaluate dense, BM25, and hybrid retrieval with Recall@k."
+        description="Evaluate the live retriever API with Recall@k."
+    )
+    parser.add_argument(
+        "--retriever-url",
+        default=os.getenv("RETRIEVER_URL", DEFAULT_RETRIEVER_URL),
+        help=f"Retriever service base URL (default: {DEFAULT_RETRIEVER_URL})."
     )
     parser.add_argument(
         "--corpus",
         type=Path,
         default=Path("data/corpus.txt"),
-        help="Path to the corpus text file."
+        help="Corpus used by the retriever, for ID and document-count validation."
     )
     parser.add_argument(
         "--qa",
         type=Path,
         default=Path("data/evaluation_qa.json"),
         help="Path to the evaluation QA JSON file."
+    )
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=10.0,
+        help="Timeout in seconds for each retriever request."
     )
 
     return parser.parse_args()
@@ -367,14 +266,39 @@ def main() -> None:
     args = parse_args()
     documents = load_corpus(args.corpus)
     qa_dataset = load_qa_dataset(args.qa)
+    validate_dataset(documents, qa_dataset)
 
-    metrics_by_mode = {
-        mode: evaluate_mode(qa_dataset, documents, mode, DEFAULT_K_VALUES)
-        for mode in MODES
-    }
+    client = RetrieverClient(args.retriever_url, args.timeout)
+    health = client.health()
+    validate_service(health, len(documents))
 
+    print(
+        f"Retriever: {args.retriever_url} | "
+        f"backend: {health['dense_backend']} | "
+        f"documents: {health['documents_loaded']}"
+    )
+
+    metrics_by_mode = {}
+    misses_by_mode = {}
+
+    for mode in MODES:
+        metrics, misses = evaluate_mode(
+            qa_dataset,
+            client,
+            mode,
+            DEFAULT_K_VALUES
+        )
+        metrics_by_mode[mode] = metrics
+        misses_by_mode[mode] = misses
+
+    print()
     print_results(metrics_by_mode, DEFAULT_K_VALUES)
+    print_misses(misses_by_mode, min(DEFAULT_K_VALUES))
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except (EvaluationError, OSError, json.JSONDecodeError) as error:
+        print(f"Evaluation failed: {error}", file=sys.stderr)
+        raise SystemExit(1)
